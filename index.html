@@ -4905,8 +4905,8 @@ function fitCameraToMeshes(meshes, instant) {
   box.getCenter(center);
   const size = new THREE.Vector3();
   box.getSize(size);
-  const maxDim = Math.max(size.x, size.y, size.z, modelSize * 0.06);
-  const dist = maxDim * 3.3 + modelSize * 0.08;
+  const maxDim = Math.max(size.x, size.y, size.z, modelSize * 0.03);
+  const dist = maxDim * 2.5 + modelSize * 0.04;
   const dir = new THREE.Vector3(0.45, 0.75, 0.55).normalize();
   const newPos = center.clone().addScaledVector(dir, dist);
   if (instant) {
@@ -4979,6 +4979,22 @@ function explodeGroups(groups, priorMeshes) {
   const anchorMeshes = priorMeshes.length ? priorMeshes : (anchorGroup ? anchorGroup.meshes : allMeshes);
   const anchorCenter = boxCenterOf(anchorMeshes);
 
+  // Base the explode gap on the size of THIS step's own parts (assembled,
+  // pre-explode footprint), not the whole product's bounding box - otherwise
+  // a small part (like a motor bracket) ends up flung far away relative to
+  // its own size, floating in empty space instead of reading as "just next
+  // to" the frame like the reference picture.
+  const sizeMeshesForStep = priorMeshes.length ? priorMeshes.concat(allMeshes) : allMeshes;
+  const stepBox = new THREE.Box3();
+  let stepBoxAny = false;
+  sizeMeshesForStep.forEach((m) => { stepBox.expandByObject(m); stepBoxAny = true; });
+  let stepMaxDim = modelSize * 0.4;
+  if (stepBoxAny && !stepBox.isEmpty()) {
+    const stepSize = new THREE.Vector3();
+    stepBox.getSize(stepSize);
+    stepMaxDim = Math.max(stepSize.x, stepSize.y, stepSize.z, modelSize * 0.05);
+  }
+
   const basis = cameraBasis();
 
   groups.forEach((grp, gi) => {
@@ -5019,7 +5035,7 @@ function explodeGroups(groups, priorMeshes) {
         }
         dir = axis.clone().multiplyScalar(sign);
       }
-      const explodeDist = Math.max(modelSize * 0.45, 0.015) * fanScale;
+      const explodeDist = Math.max(stepMaxDim * 0.85, modelSize * 0.03) * fanScale;
       const exploded = target.clone().addScaledVector(dir, explodeDist);
       m.position.copy(exploded);
       m.userData._animFrom = exploded.clone();
