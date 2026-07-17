@@ -4781,6 +4781,17 @@ const emptyMsgEl = document.getElementById('emptyMsg');
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, 1, 0.001, 100);
+// Shared fixed viewing direction + roll (camera "up" tilt) for the whole app.
+// The roll is what makes an assembly that sits upright in the CAD (like a
+// tall motor on a base) read as a diagonal "hero shot" on screen, matching
+// how the reference renders were composed - plain orbiting alone can't do
+// this since it never tilts the horizon.
+const VIEW_DIR = new THREE.Vector3(0.280, 0.574, 0.770).normalize();
+const VIEW_ROLL_DEG = -28;
+function viewUp() {
+  const r = VIEW_ROLL_DEG * Math.PI / 180;
+  return new THREE.Vector3(Math.sin(r), Math.cos(r), 0);
+}
 camera.position.set(0.25, 0.2, 0.3);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -4927,9 +4938,9 @@ function fitCameraToMeshes(meshes, instant) {
   const size = new THREE.Vector3();
   box.getSize(size);
   const maxDim = Math.max(size.x, size.y, size.z, modelSize * 0.03);
-  const dist = maxDim * 1.7 + modelSize * 0.02;
-  const dir = new THREE.Vector3(0.55, 0.35, 0.6).normalize();
-  const newPos = center.clone().addScaledVector(dir, dist);
+  const dist = maxDim * 1.35 + modelSize * 0.02;
+  const newPos = center.clone().addScaledVector(VIEW_DIR, dist);
+  camera.up.copy(viewUp());
   if (instant) {
     camera.position.copy(newPos);
     controls.target.copy(center);
@@ -4960,9 +4971,9 @@ function boxCenterOf(meshes) {
 // in screen terms ("up and to the right") that read consistently regardless
 // of a part's own geometry - handy for matching a reference picture exactly.
 function cameraBasis() {
-  const forward = new THREE.Vector3(0.55, 0.35, 0.6).normalize().negate();
-  const worldUp = new THREE.Vector3(0, 1, 0);
-  const right = new THREE.Vector3().crossVectors(forward, worldUp).normalize();
+  const forward = VIEW_DIR.clone().negate();
+  const rolledUp = viewUp();
+  const right = new THREE.Vector3().crossVectors(forward, rolledUp).normalize();
   const up = new THREE.Vector3().crossVectors(right, forward).normalize();
   return { right, up, forward: forward.clone().negate() };
 }
@@ -5199,10 +5210,9 @@ document.getElementById('nextBtn').addEventListener('click', () => {
 });
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (!modelRoot) return;
-  const dist = modelSize * 2.2;
-  camera.position.set(modelCenter.x + dist * 0.6, modelCenter.y + dist * 0.5, modelCenter.z + dist * 0.6);
-  controls.target.copy(modelCenter);
-  cameraAnim = null;
+  const { groups, activeMeshes, priorMeshes } = computeStepMeshLists(currentStep);
+  const combined = priorMeshes.concat(activeMeshes);
+  fitCameraToMeshes(combined.length ? combined : activeMeshes, true);
 });
 
 function animate(now) {
