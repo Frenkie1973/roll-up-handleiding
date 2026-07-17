@@ -5083,12 +5083,14 @@ function renderStep(idx, phase, instant) {
 // Animate the CURRENT step's already-exploded parts into their assembled
 // position (uses the _animFrom/_animTo already stored by explodeGroups).
 function assembleCurrentStep() {
+  // Deliberately do NOT refit/zoom the camera here: the viewpoint chosen for
+  // the exploded state should stay put while the parts animate together, so
+  // the user watches one stable "aanzicht" the whole step through instead of
+  // the camera jumping/zooming at the same time as the parts move.
   const groups = stepGroupMeshes[currentStep] || [];
   settleGroups(groups);
   currentPhase = 1;
   updateUI(currentStep, 1);
-  const { activeMeshes, priorMeshes } = computeStepMeshLists(currentStep);
-  fitCameraToMeshes(priorMeshes.concat(activeMeshes), false);
 }
 
 document.getElementById('prevBtn').addEventListener('click', () => {
