@@ -4895,6 +4895,27 @@ let currentPhase = 0; // 0 = exploded (static, user-controlled), 1 = assembled
 const animating = new Set();
 let cameraAnim = null;
 
+function assembledSizeOf(meshes) {
+  // Size of these meshes at their REST (assembled) position, regardless of
+  // where they currently are (e.g. spread apart while exploded). Using this
+  // for zoom distance keeps the shot tight and matched to the real part
+  // size, instead of ballooning outward whenever parts happen to be exploded
+  // further apart on screen.
+  if (!meshes.length) return null;
+  const saved = meshes.map((m) => m.position.clone());
+  meshes.forEach((m) => { const t = originalPos.get(m); if (t) m.position.copy(t); });
+  if (modelRoot) modelRoot.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  let any = false;
+  meshes.forEach((m) => { box.expandByObject(m); any = true; });
+  meshes.forEach((m, i) => { m.position.copy(saved[i]); });
+  if (modelRoot) modelRoot.updateMatrixWorld(true);
+  if (!any || box.isEmpty()) return null;
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  return size;
+}
+
 function fitCameraToMeshes(meshes, instant) {
   if (!meshes.length) return;
   const box = new THREE.Box3();
@@ -4903,10 +4924,10 @@ function fitCameraToMeshes(meshes, instant) {
   if (!any || box.isEmpty()) return;
   const center = new THREE.Vector3();
   box.getCenter(center);
-  const size = new THREE.Vector3();
-  box.getSize(size);
+  const restSize = assembledSizeOf(meshes);
+  const size = restSize || (() => { const s = new THREE.Vector3(); box.getSize(s); return s; })();
   const maxDim = Math.max(size.x, size.y, size.z, modelSize * 0.03);
-  const dist = maxDim * 2.5 + modelSize * 0.04;
+  const dist = maxDim * 1.9 + modelSize * 0.02;
   const dir = new THREE.Vector3(0.45, 0.75, 0.55).normalize();
   const newPos = center.clone().addScaledVector(dir, dist);
   if (instant) {
