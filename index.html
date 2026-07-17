@@ -4858,6 +4858,13 @@ loader.parse(b64ToArrayBuffer(MODEL_BASE64), '', (gltf) => {
 
   computeStepAssignments();
 
+  // Only parts that belong to a defined step should ever be visible - anything
+  // not yet described (future steps, or parts we haven't gotten to yet) stays
+  // hidden by default, instead of falling back to the GLB's own visibility.
+  if (STEPS.length > 0) {
+    modelRoot.traverse((obj) => { if (obj.isMesh) obj.visible = false; });
+  }
+
   const box = new THREE.Box3().setFromObject(modelRoot);
   box.getCenter(modelCenter);
   const size = new THREE.Vector3();
