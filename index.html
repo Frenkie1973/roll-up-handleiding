@@ -4910,9 +4910,7 @@ function boxCenterOf(meshes) {
   return c;
 }
 
-// Determine each mesh's own long axis (its screw/shaft centerline) in world space,
-// so parts explode straight along that axis instead of clipping diagonally through
-// surrounding material.
+// A mesh's own long axis (its screw/shaft centerline), in world space.
 function localAxisWorldDir(mesh) {
   const bb = mesh.geometry.boundingBox;
   const size = new THREE.Vector3();
@@ -4929,8 +4927,24 @@ function localAxisWorldDir(mesh) {
   return axis;
 }
 
+// Small fasteners (screws) often have a wider head than shaft, which makes the
+// bounding-box heuristic pick the wrong axis for them individually. So instead
+// every new part in a step shares ONE mounting axis, taken from the largest/most
+// reliable part in the group (e.g. the motor) - the screws simply travel along
+// that same line, in front of or behind the anchor as appropriate.
+function groupDominantAxis(meshes) {
+  let best = null, bestDiag = -1;
+  meshes.forEach((m) => {
+    const bb = m.geometry.boundingBox;
+    const s = new THREE.Vector3();
+    bb.getSize(s);
+    const diag = s.length();
+    if (diag > bestDiag) { bestDiag = diag; best = m; }
+  });
+  return best ? localAxisWorldDir(best) : new THREE.Vector3(0, 1, 0);
+}
+
 function explodeGroups(groups, priorMeshes, groupMaterials, isFirstEver) {
-  // Pass 1: put everything at its assembled (target) position so world matrices are correct.
   groups.forEach((meshes) => {
     meshes.forEach((m) => {
       const target = originalPos.get(m);
@@ -4940,6 +4954,13 @@ function explodeGroups(groups, priorMeshes, groupMaterials, isFirstEver) {
   if (modelRoot) modelRoot.updateMatrixWorld(true);
 
   const anchorCenter = boxCenterOf(priorMeshes.length ? priorMeshes : (groups[0] || []));
+
+  const nonAnchorMeshes = [];
+  groups.forEach((meshes, gi) => {
+    const isAnchorGroup = gi === 0 && !priorMeshes.length && isFirstEver;
+    if (!isAnchorGroup) nonAnchorMeshes.push(...meshes);
+  });
+  const sharedAxis = nonAnchorMeshes.length ? groupDominantAxis(nonAnchorMeshes) : new THREE.Vector3(0, 1, 0);
 
   groups.forEach((meshes, gi) => {
     if (!meshes.length) return;
@@ -4955,15 +4976,14 @@ function explodeGroups(groups, priorMeshes, groupMaterials, isFirstEver) {
         m.userData._animTo = target.clone();
         return;
       }
-      const axis = localAxisWorldDir(m);
       const worldPos = new THREE.Vector3();
       m.getWorldPosition(worldPos);
       let sign = 1;
       if (anchorCenter) {
         const towardAnchor = anchorCenter.clone().sub(worldPos);
-        sign = axis.dot(towardAnchor) > 0 ? -1 : 1;
+        sign = sharedAxis.dot(towardAnchor) > 0 ? -1 : 1;
       }
-      const dir = axis.clone().multiplyScalar(sign);
+      const dir = sharedAxis.clone().multiplyScalar(sign);
       const explodeDist = Math.max(modelSize * 0.45, 0.015);
       const exploded = target.clone().addScaledVector(dir, explodeDist);
       m.position.copy(exploded);
