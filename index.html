@@ -4887,8 +4887,8 @@ function fitCameraToMeshes(meshes, instant) {
   const size = new THREE.Vector3();
   box.getSize(size);
   const maxDim = Math.max(size.x, size.y, size.z, modelSize * 0.06);
-  const dist = maxDim * 2.8 + modelSize * 0.05;
-  const dir = new THREE.Vector3(0.6, 0.5, 0.6).normalize();
+  const dist = maxDim * 3.3 + modelSize * 0.08;
+  const dir = new THREE.Vector3(0.45, 0.75, 0.55).normalize();
   const newPos = center.clone().addScaledVector(dir, dist);
   if (instant) {
     camera.position.copy(newPos);
@@ -4948,22 +4948,22 @@ function explodeGroups(groups, priorMeshes, groupMaterials, isFirstEver) {
   });
   if (modelRoot) modelRoot.updateMatrixWorld(true);
 
-  const anchorCenter = boxCenterOf(priorMeshes.length ? priorMeshes : (groups[0] || []));
+  // Reference point every new part explodes AWAY from. If parts were already
+  // assembled (prior steps), explode away from that existing assembly. If this
+  // is the very first step, there is nothing built yet - so explode away from
+  // the combined center of all the NEW parts themselves, meaning every single
+  // part (including the biggest/base one) moves apart, not just the smaller
+  // add-ons onto a fixed base.
+  const allNewMeshes = groups.flat();
+  const anchorCenter = boxCenterOf(priorMeshes.length ? priorMeshes : allNewMeshes);
 
   groups.forEach((meshes, gi) => {
     if (!meshes.length) return;
-    const isAnchorGroup = gi === 0 && !priorMeshes.length && isFirstEver;
     meshes.forEach((m) => {
       const target = originalPos.get(m);
       if (!target) return;
       m.visible = true;
       m.material = groupMaterials[gi];
-      if (isAnchorGroup) {
-        m.position.copy(target);
-        m.userData._animFrom = target.clone();
-        m.userData._animTo = target.clone();
-        return;
-      }
       const axis = localAxisWorldDir(m);
       const worldPos = new THREE.Vector3();
       m.getWorldPosition(worldPos);
