@@ -17,6 +17,7 @@
   #legend { position:absolute; top:8px; left:8px; display:flex; flex-direction:column; gap:4px; background:#ffffffdd; border:1px solid #d7dbe0; border-radius:8px; padding:8px 10px; font-size:12px; color:#1c1e22; box-shadow:0 1px 4px rgba(0,0,0,0.08); }
   #legend div { display:flex; align-items:center; gap:6px; }
   #legend span.sw { width:12px; height:12px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,0.15); }
+  #phaseTag { position:absolute; top:8px; left:50%; transform:translateX(-50%); background:#1c1e22ee; color:#fff; font-weight:700; font-size:13px; padding:6px 14px; border-radius:20px; letter-spacing:0.3px; }
   #panel { flex:0 0 auto; background:#ffffff; border-top:1px solid #dfe2e7; padding:12px 16px 6px; max-height:32vh; overflow-y:auto; }
   #stepBadge { display:inline-block; background:#E8432A; color:#fff; font-weight:700; font-size:13px; padding:3px 10px; border-radius:20px; margin-bottom:6px; }
   #stepTitle { font-size:19px; font-weight:700; margin:2px 0 4px; color:#1c1e22; }
@@ -37,9 +38,7 @@
   #dots span { width:9px; height:9px; border-radius:50%; background:#d7dbe0; }
   #dots span.active { background:#E8432A; }
   #dots span.done { background:#9aa2ac; }
-  #resetBtn, #explodeBtn { position:absolute; top:8px; background:#ffffffdd; color:#1c1e22; border:1px solid #d7dbe0; font-size:12px; padding:8px 12px; border-radius:8px; }
-  #resetBtn { right:8px; }
-  #explodeBtn { right:140px; }
+  #resetBtn { position:absolute; top:8px; right:8px; background:#ffffffdd; color:#1c1e22; border:1px solid #d7dbe0; font-size:12px; padding:8px 12px; border-radius:8px; }
   #loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:15px; color:#e4e6ea; }
 </style>
 </head>
@@ -52,7 +51,7 @@
   <div id="viewer">
     <div id="loading">3D-model wordt geladen…</div>
     <div id="legend"></div>
-    <button id="explodeBtn">Explodeer ↔</button>
+    <div id="phaseTag"></div>
     <button id="resetBtn">Reset weergave</button>
     <div id="hint">Sleep = draaien · Knijp/scroll = zoomen</div>
   </div>
@@ -4867,10 +4866,13 @@ loader.parse(b64ToArrayBuffer(MODEL_BASE64), '', (gltf) => {
 
   loadingEl.style.display = 'none';
   resize();
-  renderStep(0, true);
+  // Start on the EXPLODED view of step 1, per the requested flow: first show
+  // the parts pulled apart, then (on Volgende) watch them assemble.
+  renderStep(0, 0, true);
 });
 
-let currentStep = -1;
+let currentStep = 0;
+let currentPhase = 0; // 0 = exploded (static, user-controlled), 1 = assembled
 const animating = new Set();
 let cameraAnim = null;
 
@@ -4916,7 +4918,7 @@ function boxCenterOf(meshes) {
 // Each mesh explodes along its OWN long axis (its shaft/thread centerline),
 // in world space. A motor slides out along its cylindrical axis; a screw
 // backs out along its own thread axis - these are often different lines,
-// which matches how the reference Solid Edge exploded views separate parts
+// matching how the reference Solid Edge exploded views separate parts
 // (e.g. motor to one side, its mounting screws dropped straight down).
 function localAxisWorldDir(mesh) {
   const bb = mesh.geometry.boundingBox;
@@ -4934,6 +4936,9 @@ function localAxisWorldDir(mesh) {
   return axis;
 }
 
+// Snap every mesh in `groups` to its EXPLODED position immediately (no
+// animation) and record _animFrom/_animTo on each mesh so a later call to
+// settleGroups() can animate it back to the assembled position.
 function explodeGroups(groups, priorMeshes, groupMaterials, isFirstEver) {
   groups.forEach((meshes) => {
     meshes.forEach((m) => {
@@ -4988,43 +4993,21 @@ function settleGroups(groups) {
   });
 }
 
-function renderStep(idx, instant) {
-  if (!modelRoot) return;
-  currentStep = idx;
-
+function computeStepMeshLists(idx) {
   const groups = stepGroupMeshes[idx] || [];
   const activeMeshes = stepMeshesFlat[idx] || [];
   const priorMeshes = [];
   for (let i = 0; i < idx; i++) priorMeshes.push(...(stepMeshesFlat[i] || []));
   const futureMeshes = [];
   for (let i = idx + 1; i < STEPS.length; i++) futureMeshes.push(...(stepMeshesFlat[i] || []));
+  return { groups, activeMeshes, priorMeshes, futureMeshes };
+}
 
-  futureMeshes.forEach((m) => { m.visible = false; });
-  priorMeshes.forEach((m) => {
-    m.visible = true;
-    m.material = originalMat.get(m);
-  });
-
-  const groupMaterials = groups.map((_, gi) => groupMaterial(gi));
-
-  if (instant) {
-    groups.forEach((meshes, gi) => {
-      meshes.forEach((m) => {
-        const target = originalPos.get(m);
-        if (!target) return;
-        m.visible = true;
-        m.material = groupMaterials[gi];
-        m.position.copy(target);
-      });
-    });
-  } else {
-    explodeGroups(groups, priorMeshes, groupMaterials, idx === 0);
-    setTimeout(() => { settleGroups(groups); }, 900);
-  }
-
+function updateUI(idx, phase) {
   document.getElementById('stepBadge').textContent = 'Stap ' + (idx + 1) + ' / ' + STEPS.length;
   document.getElementById('stepTitle').textContent = STEPS[idx].title;
   document.getElementById('stepDesc').textContent = STEPS[idx].desc;
+  document.getElementById('phaseTag').textContent = phase === 0 ? 'Uit elkaar' : 'Gemonteerd';
 
   const ul = document.getElementById('partList');
   ul.innerHTML = '';
@@ -5044,8 +5027,12 @@ function renderStep(idx, instant) {
     legend.appendChild(row);
   });
 
-  document.getElementById('prevBtn').disabled = idx === 0;
-  document.getElementById('nextBtn').textContent = idx === STEPS.length - 1 ? 'Klaar ✔' : 'Volgende ▶';
+  document.getElementById('prevBtn').disabled = idx === 0 && phase === 0;
+  if (phase === 0) {
+    document.getElementById('nextBtn').textContent = 'Monteer ▶';
+  } else {
+    document.getElementById('nextBtn').textContent = idx === STEPS.length - 1 ? 'Klaar ✔' : 'Volgende stap ▶';
+  }
 
   const dots = document.getElementById('dots');
   dots.innerHTML = '';
@@ -5055,16 +5042,68 @@ function renderStep(idx, instant) {
     else if (i < idx) d.className = 'done';
     dots.appendChild(d);
   });
+}
 
+// Render step `idx` directly in the given phase (0 = exploded, 1 = assembled),
+// with no animation - used for initial load and for jumping between steps.
+function renderStep(idx, phase, instant) {
+  if (!modelRoot) return;
+  currentStep = idx;
+  currentPhase = phase;
+
+  const { groups, activeMeshes, priorMeshes, futureMeshes } = computeStepMeshLists(idx);
+
+  futureMeshes.forEach((m) => { m.visible = false; });
+  priorMeshes.forEach((m) => {
+    m.visible = true;
+    m.material = originalMat.get(m);
+  });
+
+  const groupMaterials = groups.map((_, gi) => groupMaterial(gi));
+
+  if (phase === 0) {
+    explodeGroups(groups, priorMeshes, groupMaterials, idx === 0);
+  } else {
+    groups.forEach((meshes, gi) => {
+      meshes.forEach((m) => {
+        const target = originalPos.get(m);
+        if (!target) return;
+        m.visible = true;
+        m.material = groupMaterials[gi];
+        m.position.copy(target);
+      });
+    });
+  }
+
+  updateUI(idx, phase);
   const combined = priorMeshes.concat(activeMeshes);
   fitCameraToMeshes(combined.length ? combined : activeMeshes, instant);
 }
 
+// Animate the CURRENT step's already-exploded parts into their assembled
+// position (uses the _animFrom/_animTo already stored by explodeGroups).
+function assembleCurrentStep() {
+  const groups = stepGroupMeshes[currentStep] || [];
+  settleGroups(groups);
+  currentPhase = 1;
+  updateUI(currentStep, 1);
+  const { activeMeshes, priorMeshes } = computeStepMeshLists(currentStep);
+  fitCameraToMeshes(priorMeshes.concat(activeMeshes), false);
+}
+
 document.getElementById('prevBtn').addEventListener('click', () => {
-  if (currentStep > 0) renderStep(currentStep - 1, false);
+  if (currentPhase === 1) {
+    renderStep(currentStep, 0, false);
+  } else if (currentStep > 0) {
+    renderStep(currentStep - 1, 1, false);
+  }
 });
 document.getElementById('nextBtn').addEventListener('click', () => {
-  if (currentStep < STEPS.length - 1) renderStep(currentStep + 1, false);
+  if (currentPhase === 0) {
+    assembleCurrentStep();
+  } else if (currentStep < STEPS.length - 1) {
+    renderStep(currentStep + 1, 0, false);
+  }
 });
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (!modelRoot) return;
@@ -5072,15 +5111,6 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   camera.position.set(modelCenter.x + dist * 0.6, modelCenter.y + dist * 0.5, modelCenter.z + dist * 0.6);
   controls.target.copy(modelCenter);
   cameraAnim = null;
-});
-document.getElementById('explodeBtn').addEventListener('click', () => {
-  if (currentStep < 0) return;
-  const groups = stepGroupMeshes[currentStep] || [];
-  const priorMeshes = [];
-  for (let i = 0; i < currentStep; i++) priorMeshes.push(...(stepMeshesFlat[i] || []));
-  const groupMaterials = groups.map((_, gi) => groupMaterial(gi));
-  explodeGroups(groups, priorMeshes, groupMaterials, currentStep === 0);
-  setTimeout(() => { settleGroups(groups); }, 900);
 });
 
 function animate(now) {
