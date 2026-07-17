@@ -4928,7 +4928,7 @@ function fitCameraToMeshes(meshes, instant) {
   box.getSize(size);
   const maxDim = Math.max(size.x, size.y, size.z, modelSize * 0.03);
   const dist = maxDim * 1.7 + modelSize * 0.02;
-  const dir = new THREE.Vector3(0.45, 0.75, 0.55).normalize();
+  const dir = new THREE.Vector3(0.55, 0.35, 0.6).normalize();
   const newPos = center.clone().addScaledVector(dir, dist);
   if (instant) {
     camera.position.copy(newPos);
@@ -4960,7 +4960,7 @@ function boxCenterOf(meshes) {
 // in screen terms ("up and to the right") that read consistently regardless
 // of a part's own geometry - handy for matching a reference picture exactly.
 function cameraBasis() {
-  const forward = new THREE.Vector3(0.45, 0.75, 0.55).normalize().negate();
+  const forward = new THREE.Vector3(0.55, 0.35, 0.6).normalize().negate();
   const worldUp = new THREE.Vector3(0, 1, 0);
   const right = new THREE.Vector3().crossVectors(forward, worldUp).normalize();
   const up = new THREE.Vector3().crossVectors(right, forward).normalize();
